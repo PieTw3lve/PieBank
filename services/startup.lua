@@ -12,7 +12,7 @@ local speaker = peripheral.find("speaker")
 local chests = peripheral.find("minecraft:chest")
 local barrel = peripheral.find("minecraft:barrel")
 
-local conn = piebank.connect("top")
+local conn = piebank.connect(--[[ Specify the side your modem is on, e.g. "left" ]])
 if not conn.success then
     error(conn.error)
 end

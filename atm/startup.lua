@@ -22,11 +22,6 @@ local function resetScreen()
     monitor.write("Card...")
 end
 
--- for i = 0, 300 do
---     print(i, string.char(i))
---     os.sleep(0.2)
--- end
-
 -- Handle disk insertion
 local function onDiskInserted()
     if fs.exists("main.lua") then

@@ -6,7 +6,7 @@ local drive = peripheral.find("drive")
 local monitor = peripheral.find("monitor")
 local speaker = peripheral.find("speaker")
 
-local connect = piebank.connect("front")
+local connect = piebank.connect(--[[ Specify the side your modem is on, e.g. "left" ]])
 if not connect.success then error(connect.error) end
 
 print("Connected to PieBank gateway ID:", connect.gatewayID)

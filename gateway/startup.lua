@@ -7,7 +7,7 @@ local whitelist = {
     -- Add authorized computer IDs here
 }
 
-rednet.open("top")
+rednet.open(--[[ Specify the side your modem is on, e.g. "left" ]])
 rednet.host("piebank_gateway", "PieBank Gateway")
 
 term.clear()
