@@ -50,5 +50,5 @@ for i, file in ipairs(FILES) do
 end
 
 print("\nInstall complete.")
-sleep(1)
+sleep(5)
 os.reboot()
