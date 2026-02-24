@@ -1,15 +1,17 @@
--- ui/delete.lua
+-- ui/recover.lua
 
 local piebank = require("lib.piebank")
-local basalt = require("basalt")
+local basalt = require("lib.basalt")
 
 local DEFAULT_USERNAME = ""
 local DEFAULT_USERNAME_LENGTH = 16
 local DEFAULT_PIN = ""
 local DEFAULT_PIN_LENGTH = 6
+local DEFAULT_CURRENCY = "minecraft:diamond"
+local DEFAULT_COST = 16
 
--- Pulls the printed receipt from the printer into the output barrel.
-local function outputResults(printer, output)
+-- Pulls the printed receipt and card from the printer and drive into the output barrel.
+local function outputResults(drive, printer, output)
     if not output then
         return { success = false, error = "Output is not found" }
     end
@@ -18,10 +20,15 @@ local function outputResults(printer, output)
         return { success = false, error = "Printer is not connected" }
     end
 
+    if not drive then
+        return { success = false, error = "Disk drive is not connected" }
+    end
+
     local moved = 0
 
-    -- Printer pages typically end up in slot 8
     moved = moved + (output.pullItems(peripheral.getName(printer), 8) or 0)
+
+    moved = moved + (output.pullItems(peripheral.getName(drive), 1) or 0)
 
     if moved > 0 then
         return { success = true }
@@ -31,7 +38,8 @@ local function outputResults(printer, output)
 end
 
 -- Prints a receipt with the account information using a connected printer peripheral.
-local function printAccountReceipt(printer, account, id, pin)
+local function printAccountReceipt(account, id, pin)
+    local printer = peripheral.find("printer")
     if not printer then
         return { success = false, error = "No printer connected" }
     end
@@ -70,7 +78,7 @@ local function printAccountReceipt(printer, account, id, pin)
     line(2, "ID " .. tostring(id))
     line(3, "\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140")
 
-    line(5, " Account Deletion Receipt")
+    line(5, " Account Recover Receipt")
     line(7, "Owner: " .. tostring(account.owner))
     line(8, "Account ID: " .. tostring(account.account_id))
     line(9, "Transfer ID: " .. tostring(account.tx_id))
@@ -81,11 +89,111 @@ local function printAccountReceipt(printer, account, id, pin)
     line(14, "\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140\140")
 
     line(16, "       IMPORTANT")
-    line(18, "DO NOT SHARE THIS PAPER.")
-    line(19, "ACCOUNT DELETION IS FINAL.")
+    line(18, "PLEASE KEEP YOUR PIEBANK")
+    line(19, " CARD IN A SECURE PLACE")
 
     printer.endPage()
     return { success = true }
+end
+
+-- Copies the piebank library to the inserted PieBank card
+local function copyPiebankLibToDisk(drive)
+    if not drive then return false end
+
+    local mount = drive.getMountPath and drive.getMountPath()
+    if not mount then return false end
+
+    if not fs.exists(mount .. "/lib") then
+        fs.makeDir(mount .. "/lib")
+    end
+
+    local dst = mount .. "/lib/piebank.lua"
+    if fs.exists(dst) then
+        fs.delete(dst)
+    end
+
+    if not fs.exists("lib/piebank.lua") then
+        return false
+    end
+
+    fs.copy("lib/piebank.lua", dst)
+    return true
+end
+
+-- Writes the card information to the disk's info.json file.
+local function writeCardInfo(drive, cardID, txID)
+    if not drive then return false end
+
+    if not copyPiebankLibToDisk(drive) then
+        return false
+    end
+
+    local mount = drive.getMountPath and drive.getMountPath()
+    if not mount then return false end
+
+    local info = {
+        card_id = tostring(cardID),
+        tx_id = tonumber(txID)
+    }
+
+    local filePath = mount .. "/info.json"
+    local file = fs.open(filePath, "w")
+    if not file then return false end
+
+    file.write(textutils.serializeJSON(info))
+    file.close()
+
+    return true
+end
+
+-- Counts the number of diamonds in the dispenser.
+local function countDiamonds(dispenser)
+    if not dispenser then return 0 end
+
+    local total = 0
+    for _, item in pairs(dispenser.list()) do
+        if item.name == DEFAULT_CURRENCY then
+            total = total + item.count
+        end
+    end
+    return total
+end
+
+-- Attempts to take the specified amount of diamonds from the dispenser.
+local function takeDiamonds(dispenser, vault, amount)
+    if not dispenser or not vault then return false end
+
+    local remaining = amount
+    for slot, item in pairs(dispenser.list()) do
+        if item.name == DEFAULT_CURRENCY then
+            local toTake = math.min(item.count, remaining)
+            local moved = dispenser.pushItems(peripheral.getName(vault), slot, toTake)
+            remaining = remaining - moved
+            if remaining <= 0 then
+                return true
+            end
+        end
+    end
+
+    return false
+end
+
+-- Attempts to take a bank card from the available card storage.
+local function takeCard(drive, cards)
+    if not drive then return false end
+
+    for _, chest in ipairs(cards) do
+        local list = chest.list()
+        if next(list) then
+            local slot = next(list)
+            local moved = chest.pushItems(peripheral.getName(drive), slot, 1)
+            if moved > 0 then
+                return true
+            end
+        end
+    end
+
+    return false
 end
 
 return function(ctx)
@@ -96,7 +204,7 @@ return function(ctx)
         :setVisible(false)
 
     frame:addLabel()
-        :setText("Delete Account")
+        :setText("Account Recovery")
         :centerHorizontal("parent", 0)
         :toTop(2)
         :setForeground(colors.white)
@@ -175,34 +283,56 @@ return function(ctx)
                 return frame.showToast("PIN must be " .. DEFAULT_PIN_LENGTH .. " digits", colors.red)
             end
 
+            local diamonds = countDiamonds(ctx.dispenser)
+            if diamonds < DEFAULT_COST then
+                return frame.showToast("Please insert " .. DEFAULT_COST .. " diamonds into the dispenser", colors.red)
+            end
+
+            if not ctx.cards or #ctx.cards == 0 then
+                return frame.showToast("No card storage found! Please contact PieTwelve", colors.red)
+            end
+
             local computer = piebank.isWhitelisted(ctx.gatewayID)
             if not computer.whitelisted then
                 return frame.showToast("This computer is not have authorized access", colors.red)
             end
 
-            frame.showToast("Deleting your account...", colors.yellow)
+            if not takeCard(ctx.drive, ctx.cards) then
+                return frame.showToast("Out of bank cards! Please contact PieTwelve", colors.red)
+            end
+
+            if not takeDiamonds(ctx.dispenser, ctx.vault, DEFAULT_COST) then
+                return frame.showToast("Failed to take diamonds from dispenser!", colors.red)
+            end
+
+            frame.showToast("Recovering your account...", colors.yellow)
             usernameInput:setText("")
             pinInput:setText("")
 
-            local deleted = piebank.delete(ctx.gatewayID, username, pin)
-            if not deleted.success then
-                return frame.showToast(deleted.error or "Failed to delete account", colors.red)
+            local account = piebank.recover(ctx.gatewayID, username, pin)
+            if not account.success then
+                return frame.showToast(account.error or "Failed to recover account", colors.red)
             end
 
-            local receiptId = tostring(os.epoch("utc"))
+            ctx.drive.setDiskLabel(account.owner .. "'s PieBank Card")
 
-            local printed = printAccountReceipt(ctx.printer, deleted, receiptId, pin)
+            if not writeCardInfo(ctx.drive, account.card_id, account.tx_id) then
+                processing = false
+                return frame.showToast("Failed to write card information to disk", colors.red)
+            end
+
+            local printed = printAccountReceipt(account, ctx.drive.getDiskID(), pin)
             if not printed.success then
                 frame.showToast(printed.error, colors.yellow)
             end
 
-            local out = outputResults(ctx.printer, ctx.output)
+            local out = outputResults(ctx.drive, ctx.printer, ctx.output)
             if not out.success then
                 frame.showToast(out.error, colors.yellow)
             end
 
             frame.gotoScreen("main")
-            frame.showToast("Account deleted successfully!", colors.green)
+            frame.showToast("Recovery complete. New card issued!", colors.green)
             ctx.speaker.playSound("entity.experience_orb.pickup")
         end)
         :setBackground(colors.green)

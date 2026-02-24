@@ -1,7 +1,7 @@
 -- startup.lua
 
 local piebank = require("lib.piebank")
-local basalt = require("basalt")
+local basalt = require("lib.basalt")
 local app = basalt.getMainFrame()
 
 local drive = peripheral.find("drive")

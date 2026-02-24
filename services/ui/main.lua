@@ -1,6 +1,6 @@
 -- ui/main.lua
 
-local basalt = require("basalt")
+local basalt = require("lib.basalt")
 
 return function(ctx)
     local width, height = term.getSize()

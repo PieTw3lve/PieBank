@@ -1,7 +1,7 @@
 -- ui/create.lua
 
 local piebank = require("lib.piebank")
-local basalt = require("basalt")
+local basalt = require("lib.basalt")
 
 local DEFAULT_USERNAME = ""
 local DEFAULT_USERNAME_LENGTH = 16
